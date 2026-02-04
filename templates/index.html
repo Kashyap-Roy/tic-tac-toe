@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tic Tac Toe - Multiplayer</title>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+
+        .container {
+            display: flex;
+            gap: 30px;
+            max-width: 1200px;
+            width: 90%;
+            animation: fadeIn 0.6s ease-in;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .game-section {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .chat-section {
+            width: 350px;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            padding: 25px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            display: flex;
+            flex-direction: column;
+            height: 600px;
+        }
+
+        .menu-card, .game-card {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            text-align: center;
+            backdrop-filter: blur(10px);
+        }
+
+        h1 {
+            color: #667eea;
+            font-size: 48px;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .subtitle {
+            color: #764ba2;
+            font-size: 18px;
+            margin-bottom: 30px;
+        }
+
+        .button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 18px;
+            border-radius: 50px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin: 10px;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+        }
+
+        .button:active {
+            transform: translateY(0);
+        }
+
+        .input {
+            padding: 15px 20px;
+            font-size: 24px;
+            border: 2px solid #667eea;
+            border-radius: 10px;
+            text-align: center;
+            margin: 10px 0;
+            width: 200px;
+            letter-spacing: 5px;
+            font-weight: bold;
+        }
+
+        .room-code {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px 30px;
+            border-radius: 10px;
+            font-size: 32px;
+            letter-spacing: 8px;
+            margin: 20px 0;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .status {
+            font-size: 24px;
+            margin: 20px 0;
+            font-weight: bold;
+            color: #667eea;
+            min-height: 40px;
+        }
+
+        .board {
+            display: grid;
+            grid-template-columns: repeat(3, 140px);
+            grid-template-rows: repeat(3, 140px);
+            gap: 15px;
+            margin: 20px 0;
+            perspective: 1000px;
+        }
+
+        .cell {
+            background: white;
+            border: none;
+            border-radius: 15px;
+            font-size: 72px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .cell:hover:not(.occupied) {
+            background: #f0f0ff;
+            transform: scale(1.05);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .cell.occupied {
+            cursor: not-allowed;
+        }
+
+        .cell.x {
+            color: #667eea;
+            animation: popIn 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+        }
+
+        .cell.o {
+            color: #764ba2;
+            animation: popIn 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+        }
+
+        @keyframes popIn {
+            0% { transform: scale(0) rotate(-180deg); opacity: 0; }
+            50% { transform: scale(1.2) rotate(10deg); }
+            100% { transform: scale(1) rotate(0deg); opacity: 1; }
+        }
+
+        .cell.winning {
+            animation: winPulse 1s ease-in-out infinite;
+            background: linear-gradient(135deg, #ffd700 0%, #ffed4e 100%);
+        }
+
+        @keyframes winPulse {
+            0%, 100% { transform: scale(1); box-shadow: 0 0 20px rgba(255, 215, 0, 0.6); }
+            50% { transform: scale(1.1); box-shadow: 0 0 40px rgba(255, 215, 0, 0.9); }
+        }
+
+        .victory-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            animation: fadeIn 0.5s ease-in;
+        }
+
+        .victory-card {
+            background: white;
+            padding: 50px;
+            border-radius: 20px;
+            text-align: center;
+            animation: bounceIn 0.8s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+        }
+
+        @keyframes bounceIn {
+            0% { transform: scale(0); }
+            50% { transform: scale(1.1); }
+            100% { transform: scale(1); }
+        }
+
+        .victory-title {
+            font-size: 64px;
+            margin-bottom: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .confetti {
+            position: fixed;
+            width: 10px;
+            height: 10px;
+            background: #667eea;
+            position: absolute;
+            animation: confettiFall 3s linear;
+        }
+
+        @keyframes confettiFall {
+            to { transform: translateY(100vh) rotate(360deg); opacity: 0; }
+        }
+
+        .chat-header {
+            color: #667eea;
+            font-size: 24px;
+            font-weight: bold;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #f8f9ff;
+            border-radius: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .message {
+            padding: 10px 15px;
+            border-radius: 15px;
+            max-width: 80%;
+            word-wrap: break-word;
+            animation: slideIn 0.3s ease-out;
+        }
+
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateX(-20px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+
+        .message.x {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            align-self: flex-start;
+        }
+
+        .message.o {
+            background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+            color: white;
+            align-self: flex-end;
+        }
+
+        .message-time {
+            font-size: 10px;
+            opacity: 0.7;
+            margin-top: 5px;
+        }
+
+        .chat-input-container {
+            display: flex;
+            gap: 10px;
+        }
+
+        .chat-input {
+            flex: 1;
+            padding: 12px 15px;
+            border: 2px solid #667eea;
+            border-radius: 25px;
+            font-size: 14px;
+            outline: none;
+        }
+
+        .send-button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 25px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .send-button:hover {
+            transform: scale(1.05);
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        .error {
+            color: #e74c3c;
+            margin-top: 10px;
+            font-size: 16px;
+        }
+
+        @media (max-width: 1024px) {
+            .container {
+                flex-direction: column;
+                align-items: center;
+            }
+            .chat-section {
+                width: 90%;
+                max-width: 500px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="game-section">
+            <!-- Menu Screen -->
+            <div id="menu" class="menu-card">
+                <h1>🎮 Tic Tac Toe</h1>
+                <p class="subtitle">Multiplayer Edition</p>
+                <button class="button" onclick="createRoom()">Create Room</button>
+                <div style="margin: 20px 0;">
+                    <input type="text" id="joinRoomInput" class="input" placeholder="0000" maxlength="4" pattern="\d{4}">
+                    <button class="button" onclick="joinRoom()">Join Room</button>
+                </div>
+                <p id="menuError" class="error"></p>
+            </div>
+
+            <!-- Game Screen -->
+            <div id="gameScreen" class="game-card hidden">
+                <div class="room-code" id="roomCodeDisplay"></div>
+                <div class="status" id="gameStatus">Waiting for opponent...</div>
+                <div class="board" id="board"></div>
+                <button class="button hidden" id="rematchButton" onclick="requestRematch()">🔄 Rematch</button>
+                <button class="button" onclick="leaveGame()">Leave Game</button>
+            </div>
+        </div>
+
+        <!-- Chat Section -->
+        <div class="chat-section hidden" id="chatSection">
+            <div class="chat-header">💬 Chat</div>
+            <div class="chat-messages" id="chatMessages"></div>
+            <div class="chat-input-container">
+                <input type="text" id="chatInput" class="chat-input" placeholder="Type a message..." maxlength="200">
+                <button class="send-button" onclick="sendMessage()">Send</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Victory Overlay -->
+    <div id="victoryOverlay" class="victory-overlay">
+        <div class="victory-card">
+            <div class="victory-title" id="victoryMessage"></div>
+            <button class="button" onclick="closeVictory()">Continue</button>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        let currentRoom = null;
+        let mySymbol = null;
+        let gameActive = false;
+
+        // Initialize board
+        function initializeBoard() {
+            const board = document.getElementById('board');
+            board.innerHTML = '';
+            for (let i = 0; i < 9; i++) {
+                const cell = document.createElement('button');
+                cell.className = 'cell';
+                cell.dataset.index = i;
+                cell.onclick = () => makeMove(i);
+                board.appendChild(cell);
+            }
+        }
+
+        function createRoom() {
+            document.getElementById('menuError').textContent = '';
+            socket.emit('create_room');
+        }
+
+        function joinRoom() {
+            const roomCode = document.getElementById('joinRoomInput').value;
+            if (roomCode.length !== 4) {
+                document.getElementById('menuError').textContent = 'Please enter a 4-digit room code';
+                return;
+            }
+            document.getElementById('menuError').textContent = '';
+            socket.emit('join_room', { room_code: roomCode });
+        }
+
+        function makeMove(position) {
+            if (!gameActive) return;
+            socket.emit('make_move', { room_code: currentRoom, position: position });
+        }
+
+        function sendMessage() {
+            const input = document.getElementById('chatInput');
+            const message = input.value.trim();
+            if (message && currentRoom) {
+                socket.emit('send_message', { room_code: currentRoom, message: message });
+                input.value = '';
+            }
+        }
+
+        function requestRematch() {
+            socket.emit('rematch', { room_code: currentRoom });
+        }
+
+        function leaveGame() {
+            location.reload();
+        }
+
+        function closeVictory() {
+            document.getElementById('victoryOverlay').style.display = 'none';
+            document.getElementById('rematchButton').classList.remove('hidden');
+        }
+
+        function updateBoard(board) {
+            board.forEach((symbol, index) => {
+                const cell = document.querySelector(`[data-index="${index}"]`);
+                if (symbol) {
+                    cell.textContent = symbol;
+                    cell.classList.add('occupied', symbol.toLowerCase());
+                } else {
+                    cell.textContent = '';
+                    cell.classList.remove('occupied', 'x', 'o', 'winning');
+                }
+            });
+        }
+
+        function updateStatus(currentTurn) {
+            const status = document.getElementById('gameStatus');
+            if (currentTurn === mySymbol) {
+                status.textContent = '🎯 Your turn!';
+                status.style.color = '#667eea';
+                gameActive = true;
+            } else {
+                status.textContent = '⏳ Opponent\'s turn...';
+                status.style.color = '#764ba2';
+                gameActive = false;
+            }
+        }
+
+        function createConfetti() {
+            for (let i = 0; i < 100; i++) {
+                setTimeout(() => {
+                    const confetti = document.createElement('div');
+                    confetti.className = 'confetti';
+                    confetti.style.left = Math.random() * 100 + '%';
+                    confetti.style.background = ['#667eea', '#764ba2', '#ffd700', '#ff6b6b', '#4ecdc4'][Math.floor(Math.random() * 5)];
+                    confetti.style.animationDelay = Math.random() * 0.5 + 's';
+                    document.body.appendChild(confetti);
+                    setTimeout(() => confetti.remove(), 3000);
+                }, i * 20);
+            }
+        }
+
+        function addChatMessage(data) {
+            const messagesDiv = document.getElementById('chatMessages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${data.symbol.toLowerCase()}`;
+            messageDiv.innerHTML = `
+                <div>${data.message}</div>
+                <div class="message-time">${data.timestamp}</div>
+            `;
+            messagesDiv.appendChild(messageDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        // Socket event handlers
+        socket.on('room_created', (data) => {
+            currentRoom = data.room_code;
+            mySymbol = data.symbol;
+            document.getElementById('menu').classList.add('hidden');
+            document.getElementById('gameScreen').classList.remove('hidden');
+            document.getElementById('chatSection').classList.remove('hidden');
+            document.getElementById('roomCodeDisplay').textContent = currentRoom;
+            document.getElementById('gameStatus').textContent = 'Waiting for opponent...';
+            initializeBoard();
+            gameActive = false;
+        });
+
+        socket.on('room_joined', (data) => {
+            currentRoom = data.room_code;
+            mySymbol = data.symbol;
+            document.getElementById('menu').classList.add('hidden');
+            document.getElementById('gameScreen').classList.remove('hidden');
+            document.getElementById('chatSection').classList.remove('hidden');
+            document.getElementById('roomCodeDisplay').textContent = currentRoom;
+            initializeBoard();
+            updateBoard(data.board);
+            updateStatus(data.current_turn);
+            data.chat.forEach(msg => addChatMessage(msg));
+        });
+
+        socket.on('opponent_joined', (data) => {
+            updateBoard(data.board);
+            updateStatus(data.current_turn);
+        });
+
+        socket.on('move_made', (data) => {
+            updateBoard(data.board);
+            updateStatus(data.current_turn);
+        });
+
+        socket.on('game_over', (data) => {
+            updateBoard(data.board);
+            gameActive = false;
+            
+            if (data.winning_combo) {
+                data.winning_combo.forEach(index => {
+                    document.querySelector(`[data-index="${index}"]`).classList.add('winning');
+                });
+            }
+
+            const overlay = document.getElementById('victoryOverlay');
+            const message = document.getElementById('victoryMessage');
+            
+            if (data.winner === 'draw') {
+                message.textContent = '🤝 It\'s a Draw!';
+            } else if (data.winner === mySymbol) {
+                message.textContent = '🎉 You Win!';
+                createConfetti();
+            } else {
+                message.textContent = '😔 You Lose!';
+            }
+            
+            overlay.style.display = 'flex';
+            document.getElementById('gameStatus').textContent = 'Game Over!';
+        });
+
+        socket.on('rematch_started', (data) => {
+            document.getElementById('victoryOverlay').style.display = 'none';
+            document.getElementById('rematchButton').classList.add('hidden');
+            initializeBoard();
+            updateBoard(data.board);
+            updateStatus(data.current_turn);
+        });
+
+        socket.on('new_message', (data) => {
+            addChatMessage(data);
+        });
+
+        socket.on('opponent_left', () => {
+            document.getElementById('gameStatus').textContent = '😢 Opponent left the game';
+            gameActive = false;
+        });
+
+        socket.on('error', (data) => {
+            document.getElementById('menuError').textContent = data.message;
+        });
+
+        // Chat input enter key
+        document.getElementById('chatInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendMessage();
+        });
+
+        // Room input enter key
+        document.getElementById('joinRoomInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') joinRoom();
+        });
+    </script>
+</body>
+</html>
