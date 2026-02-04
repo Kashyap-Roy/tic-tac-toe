@@ -51,11 +51,21 @@ def handle_create_room():
     }
     
     join_room(room_code)
-    emit('room_created', {'room_code': room_code, 'symbol': 'X'})
+    emit('room_created', {
+        'room_code': room_code,
+        'symbol': 'X',
+        'board': rooms[room_code]['board'],
+        'current_turn': rooms[room_code]['current_turn'],
+        'chat': rooms[room_code]['chat']
+    })
 
 @socketio.on('join_room')
 def handle_join_room(data):
-    room_code = data['room_code']
+    room_code = data.get('room_code')
+    
+    if not room_code:
+        emit('error', {'message': 'Room code is required!'})
+        return
     
     if room_code not in rooms:
         emit('error', {'message': 'Room not found!'})
@@ -68,6 +78,7 @@ def handle_join_room(data):
     join_room(room_code)
     rooms[room_code]['players'][request.sid] = 'O'
     
+    # Send room info to the joining player
     emit('room_joined', {
         'room_code': room_code,
         'symbol': 'O',
@@ -76,21 +87,31 @@ def handle_join_room(data):
         'chat': rooms[room_code]['chat']
     })
     
+    # Notify the room creator that opponent has joined
     emit('opponent_joined', {
         'board': rooms[room_code]['board'],
         'current_turn': rooms[room_code]['current_turn']
-    }, room=room_code, skip_sid=request.sid)
+    }, to=room_code, skip_sid=request.sid)
 
 @socketio.on('make_move')
 def handle_move(data):
-    room_code = data['room_code']
-    position = data['position']
+    room_code = data.get('room_code')
+    position = data.get('position')
+    
+    if not room_code or position is None:
+        emit('error', {'message': 'Invalid move data!'})
+        return
     
     if room_code not in rooms:
+        emit('error', {'message': 'Room not found!'})
         return
     
     room = rooms[room_code]
     player_symbol = room['players'].get(request.sid)
+    
+    if not player_symbol:
+        emit('error', {'message': 'You are not in this room!'})
+        return
     
     if player_symbol != room['current_turn']:
         emit('error', {'message': 'Not your turn!'})
@@ -100,6 +121,11 @@ def handle_move(data):
         emit('error', {'message': 'Cell already occupied!'})
         return
     
+    if room['winner']:
+        emit('error', {'message': 'Game is already over!'})
+        return
+    
+    # Make the move
     room['board'][position] = player_symbol
     room['current_turn'] = 'O' if player_symbol == 'X' else 'X'
     
@@ -111,24 +137,31 @@ def handle_move(data):
             'board': room['board'],
             'winner': winner,
             'winning_combo': winning_combo
-        }, room=room_code)
+        }, to=room_code)
     else:
         emit('move_made', {
             'board': room['board'],
             'position': position,
             'symbol': player_symbol,
             'current_turn': room['current_turn']
-        }, room=room_code)
+        }, to=room_code)
 
 @socketio.on('send_message')
 def handle_message(data):
-    room_code = data['room_code']
-    message = data['message']
+    room_code = data.get('room_code')
+    message = data.get('message')
+    
+    if not room_code or not message:
+        return
     
     if room_code not in rooms:
         return
     
     player_symbol = rooms[room_code]['players'].get(request.sid)
+    
+    if not player_symbol:
+        return
+    
     timestamp = datetime.now().strftime('%H:%M')
     
     chat_message = {
@@ -138,11 +171,14 @@ def handle_message(data):
     }
     
     rooms[room_code]['chat'].append(chat_message)
-    emit('new_message', chat_message, room=room_code)
+    emit('new_message', chat_message, to=room_code)
 
 @socketio.on('rematch')
 def handle_rematch(data):
-    room_code = data['room_code']
+    room_code = data.get('room_code')
+    
+    if not room_code:
+        return
     
     if room_code not in rooms:
         return
@@ -154,13 +190,13 @@ def handle_rematch(data):
     emit('rematch_started', {
         'board': rooms[room_code]['board'],
         'current_turn': rooms[room_code]['current_turn']
-    }, room=room_code)
+    }, to=room_code)
 
 @socketio.on('disconnect')
 def handle_disconnect():
     for room_code, room in list(rooms.items()):
         if request.sid in room['players']:
-            emit('opponent_left', {}, room=room_code, skip_sid=request.sid)
+            emit('opponent_left', {}, to=room_code, skip_sid=request.sid)
             leave_room(room_code)
             del room['players'][request.sid]
             if len(room['players']) == 0:
